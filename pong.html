@@ -158,29 +158,32 @@ function getTouchPos(touch) {
   };
 }
 
-canvas.addEventListener('touchstart', e => {
+function getTouchCanvasY(touch) {
+  const rect = canvas.getBoundingClientRect();
+  return (touch.clientY - rect.top) * (canvas.height / rect.height);
+}
+
+document.addEventListener('touchstart', e => {
   e.preventDefault();
   if (gameOver) { restart(); return; }
   for (const t of e.changedTouches) {
-    const pos = getTouchPos(t);
-    const side = pos.x < canvas.width / 2 ? 'left' : 'right';
+    const side = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
     touchSides[t.identifier] = side;
-    if (side === 'left') p1TouchY = pos.y;
-    else p2TouchY = pos.y;
+    if (side === 'left') p1TouchY = getTouchCanvasY(t);
+    else p2TouchY = getTouchCanvasY(t);
   }
 }, { passive: false });
 
-canvas.addEventListener('touchmove', e => {
+document.addEventListener('touchmove', e => {
   e.preventDefault();
   for (const t of e.changedTouches) {
-    const pos = getTouchPos(t);
     const side = touchSides[t.identifier];
-    if (side === 'left') p1TouchY = pos.y;
-    else if (side === 'right') p2TouchY = pos.y;
+    if (side === 'left') p1TouchY = getTouchCanvasY(t);
+    else if (side === 'right') p2TouchY = getTouchCanvasY(t);
   }
 }, { passive: false });
 
-canvas.addEventListener('touchend', e => {
+document.addEventListener('touchend', e => {
   for (const t of e.changedTouches) {
     const side = touchSides[t.identifier];
     if (side === 'left') p1TouchY = null;
@@ -190,7 +193,7 @@ canvas.addEventListener('touchend', e => {
 });
 
 // ---------- update ----------
-function update() {
+function update(dt) {
   if (paused || gameOver) return;
 
   // paddle movement — keyboard
@@ -202,8 +205,8 @@ function update() {
   if (keys['ArrowUp']) player2.dy = -PADDLE_SPEED;
   if (keys['ArrowDown']) player2.dy = PADDLE_SPEED;
 
-  player1.y = Math.max(0, Math.min(canvas.height - player1.h, player1.y + player1.dy));
-  player2.y = Math.max(0, Math.min(canvas.height - player2.h, player2.y + player2.dy));
+  player1.y = Math.max(0, Math.min(canvas.height - player1.h, player1.y + player1.dy * dt));
+  player2.y = Math.max(0, Math.min(canvas.height - player2.h, player2.y + player2.dy * dt));
 
   // paddle movement — touch (overrides keyboard if finger is down)
   if (p1TouchY !== null)
@@ -212,8 +215,8 @@ function update() {
     player2.y = Math.max(0, Math.min(canvas.height - player2.h, p2TouchY - player2.h / 2));
 
   // ball movement
-  ball.x += ball.vx;
-  ball.y += ball.vy;
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
 
   // top/bottom bounce
   if (ball.y - ball.size / 2 <= 0) {
@@ -278,12 +281,12 @@ function update() {
       pacman.eating = true;
       pacman.eatTimer = 90; // frames of chomp animation
     } else {
-      pacman.x += (dx / dist) * PACMAN_SPEED;
-      pacman.y += (dy / dist) * PACMAN_SPEED;
+      pacman.x += (dx / dist) * PACMAN_SPEED * dt;
+      pacman.y += (dy / dist) * PACMAN_SPEED * dt;
     }
 
     // animate mouth
-    pacman.mouthAngle += 0.05 * pacman.mouthDir;
+    pacman.mouthAngle += 0.05 * pacman.mouthDir * dt;
     if (pacman.mouthAngle > 0.4) pacman.mouthDir = -1;
     if (pacman.mouthAngle < 0.05) pacman.mouthDir = 1;
   }
@@ -296,14 +299,14 @@ function update() {
     ball.y = pacman.y;
 
     // chomp animation
-    pacman.mouthAngle += 0.08 * pacman.mouthDir;
+    pacman.mouthAngle += 0.08 * pacman.mouthDir * dt;
     if (pacman.mouthAngle > 0.45) pacman.mouthDir = -1;
     if (pacman.mouthAngle < 0.02) pacman.mouthDir = 1;
 
     // shrink ball as it's eaten
-    ball.size = Math.max(0, ball.size - 0.15);
+    ball.size = Math.max(0, ball.size - 0.15 * dt);
 
-    pacman.eatTimer--;
+    pacman.eatTimer -= dt;
     if (pacman.eatTimer <= 0) {
       gameOver = true;
       winner = 'PAC-MAN';
@@ -406,13 +409,17 @@ function draw() {
 }
 
 // ---------- loop ----------
-function gameLoop() {
-  update();
+let lastTime = 0;
+function gameLoop(timestamp) {
+  // dt normalised to 60fps — caps at 3 so a backgrounded tab doesn't lurch
+  const dt = lastTime ? Math.min((timestamp - lastTime) / (1000 / 60), 3) : 1;
+  lastTime = timestamp;
+  update(dt);
   draw();
   requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+requestAnimationFrame(gameLoop);
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js');
