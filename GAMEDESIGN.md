@@ -26,6 +26,11 @@ PWA — installable on Android from the browser (Add to Home Screen).
 ### To enable GitHub Pages
 Repo → Settings → Pages → Source → GitHub Actions
 
+### iOS notes
+- Works in Safari — Share → Add to Home Screen to install
+- `fullscreen` manifest mode not supported on iOS, falls back to `standalone` (small status bar)
+- Offline play requires iOS 16.4+
+
 ### Known loose ends
 - Icons (`icon-192.png`, `icon-512.png`) are minimal generated placeholders — worth replacing with real art
 - `gen-icons.mjs` can be deleted once you're happy with the icons
