@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Pong">
+<link rel="manifest" href="manifest.json">
 <title>Pong</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -11,27 +17,43 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 100vh;
+    height: 100dvh;
     font-family: 'Courier New', monospace;
     color: #fff;
     flex-direction: column;
     user-select: none;
+    overflow: hidden;
   }
   canvas {
     border: 2px solid #fff;
     display: block;
+    /* scale to fit viewport while preserving 8:5 aspect ratio */
+    width: min(100vw, 160dvh);
+    height: auto;
+    aspect-ratio: 8 / 5;
+    touch-action: none;
   }
   #info {
-    margin-top: 16px;
-    font-size: 14px;
+    margin-top: 12px;
+    font-size: 13px;
     color: #888;
     text-align: center;
+    padding: 0 8px;
+  }
+  #info .kb  { display: inline; }
+  #info .touch { display: none; }
+  @media (pointer: coarse) {
+    #info .kb    { display: none; }
+    #info .touch { display: inline; }
   }
 </style>
 </head>
 <body>
 <canvas id="pong" width="800" height="500"></canvas>
-<div id="info">W / S &mdash; Left Paddle &nbsp;&nbsp;|&nbsp;&nbsp; &uarr; / &darr; &mdash; Right Paddle &nbsp;&nbsp;|&nbsp;&nbsp; Space &mdash; Pause &nbsp;&nbsp;|&nbsp;&nbsp; First to 10 wins</div>
+<div id="info">
+  <span class="kb">W / S &mdash; Left Paddle &nbsp;&nbsp;|&nbsp;&nbsp; &uarr; / &darr; &mdash; Right Paddle &nbsp;&nbsp;|&nbsp;&nbsp; Space &mdash; Pause &nbsp;&nbsp;|&nbsp;&nbsp; First to 10 wins</span>
+  <span class="touch">Touch left half &mdash; Left Paddle &nbsp;&nbsp;|&nbsp;&nbsp; Touch right half &mdash; Right Paddle &nbsp;&nbsp;|&nbsp;&nbsp; First to 10 wins</span>
+</div>
 <script>
 const canvas = document.getElementById('pong');
 const ctx = canvas.getContext('2d');
@@ -104,15 +126,7 @@ window.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Spacebar') {
     e.preventDefault();
     if (gameOver) {
-      // restart
-      player1.score = 0;
-      player2.score = 0;
-      gameOver = false;
-      winner = '';
-      ball.size = BALL_SIZE;
-      pacman.active = false;
-      pacman.eating = false;
-      resetBall(Math.random() < 0.5 ? 1 : -1);
+      restart();
     } else {
       paused = !paused;
     }
@@ -120,11 +134,66 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key] = false; });
 
+function restart() {
+  player1.score = 0;
+  player2.score = 0;
+  gameOver = false;
+  winner = '';
+  ball.size = BALL_SIZE;
+  pacman.active = false;
+  pacman.eating = false;
+  resetBall(Math.random() < 0.5 ? 1 : -1);
+}
+
+// ---------- touch input ----------
+let p1TouchY = null;
+let p2TouchY = null;
+const touchSides = {}; // identifier -> 'left' | 'right'
+
+function getTouchPos(touch) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (touch.clientX - rect.left) * (canvas.width / rect.width),
+    y: (touch.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (gameOver) { restart(); return; }
+  for (const t of e.changedTouches) {
+    const pos = getTouchPos(t);
+    const side = pos.x < canvas.width / 2 ? 'left' : 'right';
+    touchSides[t.identifier] = side;
+    if (side === 'left') p1TouchY = pos.y;
+    else p2TouchY = pos.y;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const pos = getTouchPos(t);
+    const side = touchSides[t.identifier];
+    if (side === 'left') p1TouchY = pos.y;
+    else if (side === 'right') p2TouchY = pos.y;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) {
+    const side = touchSides[t.identifier];
+    if (side === 'left') p1TouchY = null;
+    else if (side === 'right') p2TouchY = null;
+    delete touchSides[t.identifier];
+  }
+});
+
 // ---------- update ----------
 function update() {
   if (paused || gameOver) return;
 
-  // paddle movement
+  // paddle movement — keyboard
   player1.dy = 0;
   if (keys['w'] || keys['W']) player1.dy = -PADDLE_SPEED;
   if (keys['s'] || keys['S']) player1.dy = PADDLE_SPEED;
@@ -135,6 +204,12 @@ function update() {
 
   player1.y = Math.max(0, Math.min(canvas.height - player1.h, player1.y + player1.dy));
   player2.y = Math.max(0, Math.min(canvas.height - player2.h, player2.y + player2.dy));
+
+  // paddle movement — touch (overrides keyboard if finger is down)
+  if (p1TouchY !== null)
+    player1.y = Math.max(0, Math.min(canvas.height - player1.h, p1TouchY - player1.h / 2));
+  if (p2TouchY !== null)
+    player2.y = Math.max(0, Math.min(canvas.height - player2.h, p2TouchY - player2.h / 2));
 
   // ball movement
   ball.x += ball.vx;
@@ -338,6 +413,10 @@ function gameLoop() {
 }
 
 gameLoop();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
 </script>
 </body>
 </html>
